@@ -5,9 +5,9 @@ services:
     image: postgres:15
     container_name: waterflow-db
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: waterflow2
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - db_data:/var/lib/postgresql/data
     ports:
@@ -19,7 +19,7 @@ services:
       dockerfile: Dockerfile.api
     container_name: waterflow-api
     environment:
-      DB_URL: postgresql://postgres:postgres@db:5432/waterflow2
+      DB_URL: ${DB_URL}
       OCR_API_KEY: ${OCR_API_KEY}
     depends_on:
       - db
@@ -32,7 +32,7 @@ services:
       dockerfile: Dockerfile.web
     container_name: waterflow-web
     environment:
-      DB_URL: postgresql://postgres:postgres@db:5432/waterflow2
+      DB_URL: ${DB_URL}
     depends_on:
       - api
     ports:
