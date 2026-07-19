@@ -16,7 +16,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: docker/Dockerfile.api
+      dockerfile: Dockerfile.api
     container_name: waterflow-api
     environment:
       DB_URL: postgresql://postgres:postgres@db:5432/waterflow2
