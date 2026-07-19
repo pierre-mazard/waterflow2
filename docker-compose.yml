@@ -1,0 +1,60 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15
+    container_name: waterflow-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: waterflow2
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: waterflow-api
+    environment:
+      DB_URL: postgresql://postgres:postgres@db:5432/waterflow2
+      OCR_API_KEY: ${OCR_API_KEY}
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    container_name: waterflow-web
+    environment:
+      DB_URL: postgresql://postgres:postgres@db:5432/waterflow2
+    depends_on:
+      - api
+    ports:
+      - "8501:8501"
+
+  prometheus:
+    image: prom/prometheus
+    container_name: waterflow-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+
+  grafana:
+    image: grafana/grafana
+    container_name: waterflow-grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  db_data:
