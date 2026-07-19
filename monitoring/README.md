@@ -1,52 +1,44 @@
-# 📊 Monitoring — Waterflow 2
-
-Ce dossier contient toute la stack de monitoring du projet Waterflow 2 :
-- Prometheus pour la collecte des métriques
-- Grafana pour la visualisation
-- FastAPI Instrumentator pour exposer `/metrics`
-- Docker Compose pour orchestrer l’ensemble
+# Monitoring Waterflow 2
 
 ## 1. Architecture
 
-FastAPI (/metrics) → Prometheus → Grafana Dashboard
+Le monitoring repose sur :
 
-## 2. Fichiers
+- **Prometheus** : collecte des métriques
+- **Grafana** : visualisation
+- **FastAPI Instrumentator** : exposition des métriques via `/metrics`
 
-monitoring/
-├── prometheus.yml
-├── README.md
-└── grafana/
-    └── waterflow_dashboard.json
+## 2. Métriques disponibles
 
-## 3. Configuration Prometheus
+- latence des endpoints
+- nombre de requêtes
+- erreurs
+- histogrammes de temps de réponse
+- métriques OCR
+- métriques prédiction
+- métriques DB
 
-```yaml
-global:
-  scrape_interval: 5s
-
-scrape_configs:
-  - job_name: "waterflow-api"
-    static_configs:
-      - targets: ["api:8000"]
-```
-
-## 4. Lancer le monitoring
+## 3. Lancer le monitoring
 
 ```bash
 docker-compose up --build
 ```
 
-Accès :
+Accès : 
 
 - API : http://localhost:8000
+- Prometheus : http://localljost:9090
+- Grafana : http://locallhost:3000
 
-- Metrics : http://localhost:8000/metrics
+## Dashboard Grafana
 
-- Prometheus : http://localhost:9090
+Importer le dahsboard :
+- monitoring/grafana/waterflow_dashboard.json
 
-- Grafana : http://localhost:3000
-
-## 5. Dashboard Grafana
-
-Importer :
-monitoring/grafana/waterflow_dashboard.json
+Ce dahsboard affiche : 
+- Latence API
+- Taux d'erreur
+- Prédictions par minute
+- OCR par minute
+- charge BB
+- logs RGPD

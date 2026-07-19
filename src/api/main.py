@@ -15,3 +15,5 @@ Instrumentator().instrument(app).expose(app)
 # Routers
 app.include_router(model_router, prefix="/api")
 app.include_router(data_router, prefix="/api")
+
+Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
