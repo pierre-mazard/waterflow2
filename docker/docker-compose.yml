@@ -38,5 +38,23 @@ services:
     ports:
       - "8501:8501"
 
+  prometheus:
+    image: prom/prometheus
+    container_name: waterflow-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+
+  grafana:
+    image: grafana/grafana
+    container_name: waterflow-grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
 volumes:
   db_data:
