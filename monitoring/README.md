@@ -27,8 +27,8 @@ docker-compose up --build
 Accès : 
 
 - API : http://localhost:8000
-- Prometheus : http://localljost:9090
-- Grafana : http://locallhost:3000
+- Prometheus : http://localhost:9090
+- Grafana : http://localhost:3000
 
 ## Dashboard Grafana
 
