@@ -16,7 +16,7 @@ st.write("Plateforme d'analyse des prélèvements, prédictions et métriques du
 # Chargement des données
 # ============================
 
-@st.cache_data
+
 def load_measurements():
     query = """
         SELECT m.*, c.code_client
@@ -26,7 +26,7 @@ def load_measurements():
     """
     return pd.read_sql(query, engine)
 
-@st.cache_data
+
 def load_logs():
     query = "SELECT * FROM access_logs ORDER BY timestamp DESC;"
     return pd.read_sql(query, engine)
