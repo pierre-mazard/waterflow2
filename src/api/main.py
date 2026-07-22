@@ -18,13 +18,13 @@ def startup_event():
     Base.metadata.create_all(bind=engine)
 
 # Monitoring Prometheus
-Instrumentator().instrument(app).expose(app)
+instrumentator = Instrumentator()
+instrumentator.instrument(app)
+instrumentator.expose(app, endpoint="/metrics", include_in_schema=False)
 
 # Routers
 app.include_router(model_router, prefix="/api")
 app.include_router(data_router, prefix="/api")
-
-Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 @app.get("/")
 def root():

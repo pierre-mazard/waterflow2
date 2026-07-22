@@ -1,131 +1,177 @@
-# training/train.py
-
+import os
 import pandas as pd
 import numpy as np
-import pickle
-from pathlib import Path
-
+import shap
+import mlflow
+import mlflow.sklearn
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-
+from sklearn.calibration import CalibratedClassifierCV
+from imblearn.over_sampling import SMOTE
+from xgboost import XGBClassifier
 import xgboost as xgb
-import shap
+from pathlib import Path
+import joblib
 
-DATA_PATH = Path("data/features/water_features_optimized.csv")
+# ============================================================
+# MLflow – Backend professionnel SQLite
+# ============================================================
+mlflow.set_tracking_uri("http://localhost:5000")
+mlflow.set_experiment("waterflow_potability")
 
-MODEL_PATH = Path("models/model_xgboost_safe.pkl")  # on garde le même nom pour compatibilité API
+# ============================================================
+# Paths
+# ============================================================
+MODEL_PATH = Path("models/model_xgboost_safe.pkl")
 SCALER_PATH = Path("models/scaler.pkl")
 THRESHOLD_PATH = Path("models/threshold_safe.pkl")
 FEATURE_IMPORTANCES_PATH = Path("models/feature_importances_xgboost.csv")
 EXPLANATION_PATH = Path("models/example_explanation.csv")
+DATA_PATH = Path("data/features/water_features_optimized.csv")
 
-def main():
-    print("📥 Chargement du dataset optimisé...")
-    df = pd.read_csv(DATA_PATH)
+# ============================================================
+# Load dataset
+# ============================================================
+print("📥 Chargement du dataset...")
+df = pd.read_csv(DATA_PATH)
 
-    feature_cols = [
-        "ph",
-        "Hardness",
-        "Solids",
-        "Chloramines",
-        "Sulfate",
-        "Conductivity",
-        "Organic_carbon",
-        "Trihalomethanes",
-        "Turbidity",
-        "interaction_tds_cond",
-        "interaction_ph_carbon",
-        "interaction_turb_thm"
-    ]
+# ============================================================
+# Ajouter les features OMS/EPA
+# ============================================================
+print("🧪 Ajout des indicateurs OMS/EPA...")
 
-    target_col = "Potability"
+df["risk_chloramines"] = (df["Chloramines"] > 4).astype(int)
+df["risk_thm"] = (df["Trihalomethanes"] > 80).astype(int)
+df["risk_turbidity"] = (df["Turbidity"] > 5).astype(int)
+df["risk_ph"] = ((df["ph"] < 6.5) | (df["ph"] > 8.5)).astype(int)
+df["risk_tds"] = (df["Solids"] > 1000).astype(int)
+df["risk_sulfate"] = (df["Sulfate"] > 250).astype(int)
+df["risk_conductivity"] = (df["Conductivity"] > 800).astype(int)
 
-    X = df[feature_cols]
-    y = df[target_col]
+# ============================================================
+# Features + target
+# ============================================================
+X = df.drop(columns=["Potability"])
+y = df["Potability"]
 
-    print("🔀 Split train/test...")
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+# ============================================================
+# Split stratifié
+# ============================================================
+print("🔀 Split train/test stratifié...")
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, stratify=y, random_state=42
+)
 
-    print("📏 Normalisation des features...")
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
+# ============================================================
+# SMOTE pour rééquilibrer
+# ============================================================
+print("⚖️ Rééquilibrage SMOTE...")
+smote = SMOTE(random_state=42)
+X_train_res, y_train_res = smote.fit_resample(X_train, y_train)
 
-    print("🤖 Entraînement du modèle XGBoost...")
-    model = xgb.XGBClassifier(
-        n_estimators=500,
-        learning_rate=0.05,
-        max_depth=6,
-        subsample=0.9,
-        colsample_bytree=0.9,
-        random_state=42,
-        eval_metric="logloss"
-    )
+# ============================================================
+# Normalisation
+# ============================================================
+print("📏 Normalisation...")
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train_res)
+X_test_scaled = scaler.transform(X_test)
 
-    model.fit(X_train_scaled, y_train)
+# ============================================================
+# Modèle XGBoost régularisé
+# ============================================================
+print("🤖 Entraînement du modèle XGBoost régularisé...")
 
-    print("📊 Score train :", model.score(X_train_scaled, y_train))
-    print("📈 Score test :", model.score(X_test_scaled, y_test))
+model = XGBClassifier(
+    n_estimators=300,
+    max_depth=4,
+    learning_rate=0.05,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    reg_alpha=0.5,
+    reg_lambda=1.0,
+    gamma=0.5,
+    random_state=42
+)
 
-    # -----------------------------
-    # 🔥 Seuil de sécurité
-    # -----------------------------
-    print("🛡 Calcul du seuil de sécurité...")
+# ============================================================
+# Calibration des probabilités
+# ============================================================
+calibrated_model = CalibratedClassifierCV(model, cv=5)
+calibrated_model.fit(X_train_scaled, y_train_res)
 
-    y_proba = model.predict_proba(X_train_scaled)[:, 1]
-    threshold = np.quantile(y_proba, 0.99)
+train_score = calibrated_model.score(X_train_scaled, y_train_res)
+test_score = calibrated_model.score(X_test_scaled, y_test)
 
-    print(f"✔ Seuil de sécurité = {threshold}")
+print(f"📊 Score train : {train_score:.3f}")
+print(f"📈 Score test : {test_score:.3f}")
 
-    # -----------------------------
-    # 🔍 SHAP explanations
-    # -----------------------------
-    print("📘 Calcul des explications SHAP...")
+# ============================================================
+# Calcul du seuil de sécurité
+# ============================================================
+print("🛡 Calcul du seuil de sécurité...")
 
-    explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(X_train_scaled)
+probas_train = calibrated_model.predict_proba(X_train_scaled)[:, 1]
+threshold = np.quantile(probas_train, 0.85)
 
-    example_explanation = pd.DataFrame(
-        shap_values[1][0],
-        index=feature_cols,
-        columns=["shap_value"]
-    )
-    example_explanation.to_csv(EXPLANATION_PATH)
-    print(f"✔ Explication SHAP sauvegardée dans {EXPLANATION_PATH}")
+print(f"✔ Nouveau seuil de sécurité = {threshold:.3f}")
 
-    # -----------------------------
-    # 📊 Importances des features
-    # -----------------------------
-    print("📊 Sauvegarde des importances de features...")
+# ============================================================
+# SHAP natif XGBoost (avant calibration)
+# ============================================================
+print("📘 Calcul des explications SHAP...")
 
-    importances = pd.DataFrame({
-        "feature": feature_cols,
-        "importance": model.feature_importances_
-    }).sort_values(by="importance", ascending=False)
+model.fit(X_train_scaled, y_train_res)
 
-    importances.to_csv(FEATURE_IMPORTANCES_PATH, index=False)
-    print(f"✔ Importances sauvegardées dans {FEATURE_IMPORTANCES_PATH}")
+sample = shap.sample(X_train_scaled, 100)
+dtrain = xgb.DMatrix(sample, feature_names=X.columns.tolist())
 
-    # -----------------------------
-    # 💾 Sauvegarde des artefacts
-    # -----------------------------
-    MODEL_PATH.parent.mkdir(exist_ok=True)
+shap_values = model.get_booster().predict(
+    dtrain,
+    pred_contribs=True
+)
 
-    with open(MODEL_PATH, "wb") as f:
-        pickle.dump(model, f)
+example_shap = shap_values[0][:-1]
 
-    with open(SCALER_PATH, "wb") as f:
-        pickle.dump(scaler, f)
+pd.DataFrame({
+    "feature": X.columns,
+    "shap_value": example_shap
+}).to_csv(EXPLANATION_PATH, index=False)
 
-    with open(THRESHOLD_PATH, "wb") as f:
-        pickle.dump(threshold, f)
+print(f"✔ Explication SHAP sauvegardée dans {EXPLANATION_PATH}")
 
-    print("🎉 Tous les artefacts ont été sauvegardés !")
-    print(f"✔ Modèle : {MODEL_PATH}")
-    print(f"✔ Scaler : {SCALER_PATH}")
-    print(f"✔ Seuil : {THRESHOLD_PATH}")
+# ============================================================
+# Importances
+# ============================================================
+importances = model.feature_importances_
+pd.DataFrame({
+    "feature": X.columns,
+    "importance": importances
+}).to_csv(FEATURE_IMPORTANCES_PATH, index=False)
 
-if __name__ == "__main__":
-    main()
+print(f"✔ Importances sauvegardées dans {FEATURE_IMPORTANCES_PATH}")
+
+# ============================================================
+# Sauvegarde des artefacts
+# ============================================================
+joblib.dump(calibrated_model, MODEL_PATH)
+joblib.dump(scaler, SCALER_PATH)
+joblib.dump(threshold, THRESHOLD_PATH)
+
+print("🎉 Modèle, scaler et seuil sauvegardés !")
+
+# ============================================================
+# MLflow logging
+# ============================================================
+with mlflow.start_run():
+    mlflow.log_metric("train_score", train_score)
+    mlflow.log_metric("test_score", test_score)
+    mlflow.log_metric("threshold", float(threshold))
+
+    mlflow.log_artifact(str(MODEL_PATH))
+    mlflow.log_artifact(str(SCALER_PATH))
+    mlflow.log_artifact(str(THRESHOLD_PATH))
+    mlflow.log_artifact(str(FEATURE_IMPORTANCES_PATH))
+    mlflow.log_artifact(str(EXPLANATION_PATH))
+
+print("🏁 Entraînement terminé et loggé dans MLflow (SQLite) !")

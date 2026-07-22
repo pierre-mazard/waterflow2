@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+numpy
+pandas
+scikit-learn
+xgboost
+shap
+mlflow
+sqlalchemy
+psycopg2-binary
+python-dotenv
+prometheus-fastapi-instrumentator
